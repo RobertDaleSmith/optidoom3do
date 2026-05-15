@@ -115,7 +115,7 @@ case "${1:-build}" in
                   /opt/3do-devkit/lib/3do/clib.lib \
                   ../lib/string/string.lib \
                   ../lib/intmath/intmath.lib \
-                  /opt/3do-devkit/lib/3do/armlib.32b \
+                  /opt/3do-devkit/lib/3do/armlib_cn.32b \
                   *.o 2>&1 | tail -5
 
                 # modbin sets stack size on the binary. Original Makefile
