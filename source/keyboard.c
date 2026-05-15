@@ -35,54 +35,85 @@ static uint32  kb_matrix[8] = { 0 };
 
 /* ---- scancode -> Pad* bit map ----
  *
- * Each held scancode OR-folds its Pad* bit into the joypad stream.
- * Multiple scancodes can map to the same Pad* bit (W and Up arrow
- * both fire PadUp), and one game action can come from either pad
- * or keyboard.
+ * Recreates the **1993 PC Doom default keyboard layout** -- the way
+ * Doom would have been played on a 386 in the 90s. The bindings come
+ * straight from the original DOS Doom manual (page 4):
+ *
+ *   Up / Down arrows   -- move forward / back
+ *   Left / Right       -- turn
+ *   Alt + Left / Right -- strafe (modifier; handled below)
+ *   , / .              -- strafe left / right (direct, no modifier)
+ *   Ctrl               -- fire
+ *   Space              -- use / open
+ *   Shift              -- run (speed modifier)
+ *   Tab                -- automap
+ *   Esc                -- menu
+ *   Enter              -- menu select / confirm
  *
  * "Strafe" maps to PadLeftShift / PadRightShift: OptiDoom's
  * INPUT_DPAD_ONLY input mode treats those exact bits as the
- * strafe-left / strafe-right buttons (user.c:228), which is
- * exactly the WASD strafe behaviour an FPS player expects.
+ * strafe-left / strafe-right buttons (user.c:228).
+ *
+ * Fire / Use / Run map to PadA / PadB / PadC which are the *default*
+ * PadAttack / PadUse / PadSpeed bits (data.c:21-23). If the player
+ * remaps via the in-game options, those bits no longer correspond
+ * to the same actions, but the keyboard still drives the underlying
+ * pad bits the user originally bound.
  */
 typedef struct {
   uint8  scancode;   /* PS/2 Set 2 byte. Bit 7 set = E0-extended. */
   Word   padbit;
 } KbMap;
 
+/* PS/2 Set 2 reference for scancodes used below:
+ *   0x14 = L-Ctrl       0x12 = L-Shift
+ *   0x29 = Space        0x59 = R-Shift
+ *   0x5A = Enter        0x41 = ,
+ *   0x76 = Esc          0x49 = .
+ *   0x0D = Tab          0x11 = L-Alt (E0+0x11 = R-Alt)
+ *   E0+0x75 = Up arrow  E0+0x72 = Down arrow
+ *   E0+0x6B = Left      E0+0x74 = Right
+ *   E0+0x14 = R-Ctrl    E0+0x11 = R-Alt
+ *
+ * E0-extended scancodes land at (byte | 0x80) in our 256-bit matrix
+ * (the convention the KeyboardDriver follows when splitting regular
+ * from extended keys). */
 static const KbMap KB_MAP[] = {
-  /* Movement (WASD) */
-  { 0x1D, PadUp         },   /* W -> forward    */
-  { 0x1B, PadDown       },   /* S -> back       */
-  { 0x1C, PadLeftShift  },   /* A -> strafe L   */
-  { 0x23, PadRightShift },   /* D -> strafe R   */
+  /* Movement / turn -- arrow keys */
+  { 0x75 | 0x80, PadUp    },          /* Up arrow    -> forward */
+  { 0x72 | 0x80, PadDown  },          /* Down arrow  -> back    */
+  { 0x6B | 0x80, PadLeft  },          /* Left arrow  -> turn L  */
+  { 0x74 | 0x80, PadRight },          /* Right arrow -> turn R  */
 
-  /* Turn keys (arrows) -- E0-prefixed in PS/2 Set 2, our broker
-   * shifts those into the upper half of the key matrix. */
-  { 0x75 | 0x80, PadUp    }, /* Up arrow        */
-  { 0x72 | 0x80, PadDown  }, /* Down arrow      */
-  { 0x6B | 0x80, PadLeft  }, /* Left arrow      */
-  { 0x74 | 0x80, PadRight }, /* Right arrow     */
-
-  /* Q / E -- alternate turn-left / use (Doom convention). */
-  { 0x15, PadLeft       },   /* Q -> turn L     */
-  { 0x24, PadC          },   /* E -> use        */
+  /* Direct strafe (no Alt modifier required) */
+  { 0x41, PadLeftShift  },            /* , -> strafe L          */
+  { 0x49, PadRightShift },            /* . -> strafe R          */
 
   /* Action keys */
-  { 0x29, PadA          },   /* Space -> fire   */
-  { 0x14, PadA          },   /* L-Ctrl -> fire  */
-  { 0x5A, PadC          },   /* Enter -> use    */
+  { 0x14, PadA          },            /* L-Ctrl  -> fire        */
+  { 0x14 | 0x80, PadA   },            /* R-Ctrl  -> fire        */
+  { 0x29, PadB          },            /* Space   -> use         */
+  { 0x12, PadC          },            /* L-Shift -> run         */
+  { 0x59, PadC          },            /* R-Shift -> run         */
 
-  /* Menu / map */
-  { 0x76, PadStart      },   /* Esc  -> menu    */
-  { 0x0D, PadX          },   /* Tab  -> automap */
-
-  /* Weapon cycle -- L/R brackets feel natural in Doom. */
-  { 0x54, PadLeftShift  },   /* [ -> prev (re-uses strafe; */
-  { 0x5B, PadRightShift },   /* ]    same bit, no harm)    */
+  /* Menu / map / confirm */
+  { 0x76, PadStart      },            /* Esc   -> menu          */
+  { 0x0D, PadX          },            /* Tab   -> automap       */
+  { 0x5A, PadA          },            /* Enter -> confirm       */
 };
 
 #define KB_MAP_LEN (sizeof KB_MAP / sizeof KB_MAP[0])
+
+/* Modifier scancodes -- not in KB_MAP because they don't OR-fold
+ * into a pad bit directly; they reshape arrow behaviour at the
+ * post-mapping step. */
+#define KB_SC_LALT  0x11
+#define KB_SC_RALT  (0x11 | 0x80)
+
+static int kb_held(uint8 scancode)
+{
+  return (kb_matrix[scancode >> 5] & (1u << (scancode & 0x1F))) != 0;
+}
 
 
 /* ---- broker connect / configure ----
@@ -201,6 +232,25 @@ Word readKeyboardBits(void)
           bits |= KB_MAP[i].padbit;
       }
   }
+
+  /* Alt-strafe modifier (1993 PC Doom default behaviour): when
+   * either Alt key is held, transform Left/Right arrow input from
+   * "turn" to "strafe". This mirrors the DOS Doom alt-strafe
+   * binding that gave you smooth strafing without committing to
+   * the comma/period direct-strafe keys. */
+  if (kb_held (KB_SC_LALT) || kb_held (KB_SC_RALT))
+    {
+      if (bits & PadLeft)
+        {
+          bits &= ~PadLeft;
+          bits |= PadLeftShift;
+        }
+      if (bits & PadRight)
+        {
+          bits &= ~PadRight;
+          bits |= PadRightShift;
+        }
+    }
 
   return bits;
 }
