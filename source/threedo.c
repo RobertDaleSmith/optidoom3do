@@ -15,6 +15,8 @@
 
 #include "engine_main.h"
 
+#include "keyboard.h"   /* PBUS keyboard support (WASD + mouse-look) */
+
 
 static void LowMemCode(Word Type);
 static void WipeDoom(LongWord *OldScreen,LongWord *NewScreen);
@@ -446,6 +448,7 @@ static void initSystem()
 	initScreenVDL();
 
 	InitEventUtility(1,1,FALSE);	/* I want 1 joypad, 1 mouse, and passive listening */
+	initKeyboard();					/* PBUS keyboard subscription (parallel to InitEventUtility) */
 
 	InitSoundPlayer("system/audio/dsp/varmono8.dsp",0); /* Init memory for the sound player */
 	InitMusicPlayer("system/audio/dsp/dcsqxdstereo.dsp");	/* Init memory for the music player */

@@ -2,6 +2,7 @@
 
 #include "input.h"
 #include "event.h"
+#include "keyboard.h"   /* OR-fold held keyboard state into pad bits */
 
 
 // order must correspond to enum order
@@ -46,7 +47,10 @@ static void updateJoypad()
 	cpaddata.cped_ButtonBits=0;
 	GetControlPad(1,0,&cpaddata);
 
-	joybits = cpaddata.cped_ButtonBits;
+	/* OR keyboard state into pad bits so isJoyButtonPressed() sees
+	 * held keys (W as PadUp, A as PadLeftShift, etc.). Same OR fold
+	 * the ReadJoyButtons override uses for the older input path. */
+	joybits = cpaddata.cped_ButtonBits | readKeyboardBits();
 
 	anyJoyButtonPressed = false;
 	for (i=0; i<JOY_BUTTONS_NUM; ++i) {
