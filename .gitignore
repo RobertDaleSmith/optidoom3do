@@ -1,8 +1,6 @@
-LaunchMe
-CD
-*.db
-*.iso
-*.o
-*.sym
-*.fstree
-*.layout
+source/LaunchMe*
+source/*.o
+build/
+ISOdecompile/CD/
+ISOdecompile/doom.iso
+.wine-home/
