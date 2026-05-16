@@ -2,6 +2,7 @@
 #include <IntMath.h>
 
 #include "input.h"
+#include "keyboard.h"
 
 #define MAXBOB (16<<FRACBITS)	/* 16 pixels of bobbing up and down */
 #define SLOWTURNTICS 10			/* Time before fast turning */
@@ -558,12 +559,136 @@ static Boolean WeaponAllowed(player_t *player)
 
 **********************************/
 
+extern void toggleIDDQD(player_t *player);
+extern void applyIDKFA(player_t *player);
+extern void toggleNoclip(player_t *player);
+extern Boolean ShowAllLines;
+extern Boolean ShowAllThings;
+extern Word    gamemap;
+extern gameaction_t gameaction;
+
+static char idmypos_text[64];
+
+/* Local power-grant (inter.c::GivePower is static). Mirrors that
+ * function's per-powerup tick assignments. */
+static void grantPower(player_t *player, Word power)
+{
+	switch (power) {
+		case pw_invulnerability: player->powers[power] = INVULNTICS; break;
+		case pw_invisibility:    player->powers[power] = INVISTICS;
+		                         player->mo->flags |= MF_SHADOW;     break;
+		case pw_ironfeet:        player->powers[power] = IRONTICS;   break;
+		case pw_strength:        player->powers[power] = TRUE;       break;
+		default:                 player->powers[power] = TRUE;       break;
+	}
+}
+
+static void giveOrTakePower(player_t *player, Word powerId, char *onMsg)
+{
+	if (player->powers[powerId]) {
+		if (powerId == pw_invisibility) player->mo->flags &= ~MF_SHADOW;
+		player->powers[powerId] = 0;
+		player->message = "Power-up Toggled";
+	} else {
+		grantPower(player, powerId);
+		player->message = onMsg;
+	}
+}
+
+static void processKeyboardCheats(player_t *player)
+{
+	int c, sd, warp;
+	if (!player) return;
+
+	/* Caps Lock auto-run status message. */
+	if (readAutoRunToggled()) {
+		player->message = isAutoRunEnabled() ? "Always Run ON" : "Always Run OFF";
+	}
+
+	/* +/- screen size adjust (one-shot). */
+	sd = readRequestedScreenSize();
+	if (sd != 0) {
+		int idx = (int)optGraphics->screenSizeIndex + sd;
+		if (idx < 0) idx = 0;
+		if (idx >= SCREENSIZE_OPTIONS_NUM) idx = SCREENSIZE_OPTIONS_NUM - 1;
+		optGraphics->screenSizeIndex = idx;
+	}
+
+	/* IDCLEV xx warp. Bounds checked against current MaxLevel. */
+	warp = readRequestedWarp();
+	if (warp >= 1 && warp <= 24) {
+		gamemap = warp;
+		gameaction = ga_warped;
+		player->message = "Changing Level...";
+	}
+
+	c = readRequestedCheat();
+	if (c < 0) return;
+	switch (c) {
+		case KBD_CHEAT_IDDQD:
+			toggleIDDQD(player);
+			player->message = (player->AutomapFlags & AF_GODMODE)
+			    ? "Degreelessness Mode On"
+			    : "Degreelessness Mode Off";
+			break;
+		case KBD_CHEAT_IDKFA:
+			applyIDKFA(player);
+			player->message = "Very Happy Ammo Added";
+			break;
+		case KBD_CHEAT_IDFA: {
+			Word i;
+			for (i = 0; i < NUMWEAPONS; i++) player->weaponowned[i] = TRUE;
+			for (i = 0; i < NUMAMMO; i++)    player->ammo[i] = player->maxammo[i] = 500;
+			player->armorpoints = 200;
+			player->armortype   = 2;
+			player->message = "Ammo (no keys) Added";
+		} break;
+		case KBD_CHEAT_IDCLIP:
+			toggleNoclip(player);
+			player->message = (player->AutomapFlags & AF_NOCLIP)
+			    ? "No Clipping Mode ON"
+			    : "No Clipping Mode OFF";
+			break;
+		case KBD_CHEAT_IDDT:
+			if (!ShowAllLines && !ShowAllThings) {
+				ShowAllLines = TRUE;
+				player->message = "Computer Area Map";
+			} else if (ShowAllLines && !ShowAllThings) {
+				ShowAllThings = TRUE;
+				player->message = "Things and Map";
+			} else {
+				ShowAllLines = ShowAllThings = FALSE;
+				player->message = "Map Cheat Off";
+			}
+			break;
+		case KBD_CHEAT_IDMYPOS: {
+			Fixed x = player->mo->x >> FRACBITS;
+			Fixed y = player->mo->y >> FRACBITS;
+			int ang = (player->mo->angle >> 24) & 0xFF;
+			sprintf(idmypos_text, "x=%d y=%d ang=%d", (int)x, (int)y, ang);
+			player->message = idmypos_text;
+		} break;
+		case KBD_CHEAT_BEHOLD_V: giveOrTakePower(player, pw_invulnerability, "Invulnerability!"); break;
+		case KBD_CHEAT_BEHOLD_S: giveOrTakePower(player, pw_strength,       "Berserk!");          break;
+		case KBD_CHEAT_BEHOLD_I: giveOrTakePower(player, pw_invisibility,   "Invisibility!");     break;
+		case KBD_CHEAT_BEHOLD_R: giveOrTakePower(player, pw_ironfeet,       "Radiation Suit");    break;
+		case KBD_CHEAT_BEHOLD_A: giveOrTakePower(player, pw_allmap,         "Computer Area Map"); break;
+		case KBD_CHEAT_BEHOLD_L:
+			/* 3DO Doom doesn't have pw_infrared (light amplification),
+			 * so this one's a no-op with an apologetic message. */
+			player->message = "No Light-Amp on 3DO";
+			break;
+	}
+}
+
 void P_PlayerThink(player_t *player)
 {
 	Word buttons;		/* Current joypad buttons */
 	Word i;
 
 	buttons = JoyPadButtons;		/* Get the joypad info */
+
+	processKeyboardCheats(player);  /* DOS-style typed cheat dispatch */
 
 	P_PlayerMobjThink(player->mo);		/* Perform the inertia movement */
 	P_BuildMove(player);			/* Convert joypad info to motion */
@@ -636,6 +761,27 @@ void P_PlayerThink(player_t *player)
 							/* Cycle to next weapon */
 					player->pendingweapon=(weapontype_t)(player->pendingweapon+i);
 				} while (!WeaponAllowed(player));	/* Ok to keep? */
+			}
+		}
+	}
+
+	/* DOS Doom keyboard 1-7 weapon select. Number keys come back from
+	 * the keyboard driverlet via readRequestedWeapon (one-shot). Map:
+	 *   1 -> fist, but toggle to chainsaw if owned and already on fist
+	 *   2 -> pistol, 3 -> shotgun, 4 -> chaingun, 5 -> rocket,
+	 *   6 -> plasma, 7 -> BFG.
+	 * Only honoured if pendingweapon is still wp_nochange so the
+	 * cycle path above wins when both fire same frame. */
+	if (player->pendingweapon == wp_nochange) {
+		int req = readRequestedWeapon();
+		if (req >= 0) {
+			weapontype_t want = (weapontype_t)req;
+			if (req == 0 && player->weaponowned[wp_chainsaw]
+			    && player->readyweapon == wp_fist) {
+				want = wp_chainsaw;
+			}
+			if (player->weaponowned[want]) {
+				player->pendingweapon = want;
 			}
 		}
 	}
