@@ -16,9 +16,11 @@ static viswall_t *WallSegPtr;		// Pointer to the current wall
 static viswall_t *LastSegPtr;      // Pointer to last wall
 
 static ColumnStore columnStoreArray[MAXSCREENWIDTH * 16];	// MAXSCREENWIDTH * 16 should be more than enough
-static ColumnStore *columnStoreArrayPtr[MAXWALLCMDS];		// start pointers in columnStoreArray for each individual line segment
-static int columnStoreArrayIndex;							// index for new line segment
 ColumnStore *columnStoreArrayData;							// pointer to pass scale and light wall column data to phase6_1
+/* Per-wall start pointers now live on viswall_t->columnStoreData
+ * (an inline field) instead of a parallel columnStoreArrayPtr[] +
+ * columnStoreArrayIndex. Saves one pointer-array indirection per
+ * column during the wall draw pass. */
 
 
 bool background_clear = false;
@@ -88,15 +90,12 @@ static void StartSegLoop()
 	prepHeuristicSegInfo();
 
     columnStoreArrayData = columnStoreArray;
-    columnStoreArrayIndex = 0;
     do {
-		// Commenting also out the idea that didn't work, but could work in the future
-		//if (!isSegWallOccluded(WallSegPtr)) {
-			columnStoreArrayPtr[columnStoreArrayIndex++] = columnStoreArrayData;
-			SegLoop(WallSegPtr);
-		/*} else {
-			columnStoreArrayPtr[columnStoreArrayIndex++] = NULL;
-		}*/
+		// Record this wall's column-data start pointer directly on the
+		// viswall_t -- the draw passes pick it back off the wall rather
+		// than walking a parallel columnStoreArrayPtr[] / Index pair.
+		WallSegPtr->columnStoreData = columnStoreArrayData;
+		SegLoop(WallSegPtr);
     } while (++WallSegPtr!=LastSegPtr);	// Next wall in chain
 }
 
@@ -108,7 +107,7 @@ static void DrawWalls()
     if (optGraphics->renderer == RENDERER_DOOM) {
         do {
             --WallSegPtr;			// Last go backwards!!
-			columnStoreArrayData = columnStoreArrayPtr[--columnStoreArrayIndex];
+			columnStoreArrayData = (ColumnStore *)WallSegPtr->columnStoreData;
 			if (columnStoreArrayData) {
 				if (optGraphics->wallQuality == WALL_QUALITY_HI) {
 					DrawSeg(WallSegPtr, columnStoreArrayData);
@@ -122,7 +121,7 @@ static void DrawWalls()
 		bool prevRenderSwitchColumns = false;
         do {
             --WallSegPtr;			// Last go backwards!!
-			columnStoreArrayData = columnStoreArrayPtr[--columnStoreArrayIndex];
+			columnStoreArrayData = (ColumnStore *)WallSegPtr->columnStoreData;
 			if (columnStoreArrayData) {
 				if (optGraphics->wallQuality ==  WALL_QUALITY_LO) {  // flat
 					DrawSegPoly(WallSegPtr, columnStoreArrayData); // so, always poly
@@ -162,7 +161,7 @@ void DrawWallsWireframe()
 
     do {
 		--WallSegPtr;
-        columnStoreArrayData = columnStoreArrayPtr[--columnStoreArrayIndex];
+        columnStoreArrayData = (ColumnStore *)WallSegPtr->columnStoreData;
 		if (columnStoreArrayData) {
 			DrawSegWireframe(WallSegPtr, columnStoreArrayData);
 		}

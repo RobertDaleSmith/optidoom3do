@@ -62,6 +62,23 @@ void initCCBarraySky(void)
 int visplanesCountMax = 0;
 static bool isFloor;
 
+/* Tiny plane-lookup cache. The previous FindPlane did a linear scan
+ * starting from the caller's last plane forward; with many splits
+ * (multi-height rooms) that turned into O(N) per column-end call.
+ * Most adjacent column-ends want the same plane content, so a small
+ * MRU cache hits often and skips the scan. Cleared every frame in
+ * resetPlaneCache (called from R_Setup along with lastvisplane). */
+#define PLANE_CACHE_SIZE 8
+static visplane_t *plane_cache[PLANE_CACHE_SIZE];
+static Word        plane_cache_pos;
+
+void resetPlaneCache(void)
+{
+	int i;
+	for (i = 0; i < PLANE_CACHE_SIZE; i++) plane_cache[i] = 0;
+	plane_cache_pos = 0;
+}
+
 static visplane_t *FindPlane(visplane_t *check, viswall_t *segl, int start, Word color)
 {
 	const Fixed height = segl->floorheight;
@@ -69,17 +86,36 @@ static visplane_t *FindPlane(visplane_t *check, viswall_t *segl, int start, Word
 	const int stop = segl->RightX;
 	const Word Light = segl->seglightlevel;
 	const Word special = segl->special & SEC_SPEC_RENDER_BITS;
-	
+	int ci;
+
 	if (visplanesCount > maxVisplanes-2) return 0;
+
+	/* MRU cache lookup -- if a recently-used plane already has this
+	 * column free and matches all content keys, return it without
+	 * walking the visplane array. */
+	for (ci = 0; ci < PLANE_CACHE_SIZE; ci++) {
+		visplane_t *p = plane_cache[ci];
+		if (p && p != check
+		    && p->height == height
+		    && p->PicHandle == PicHandle
+		    && p->PlaneLight == Light
+		    && p->color == color
+		    && p->special == special
+		    && p->open[start] == OPENMARK) {
+			if (start < p->minx) p->minx = start;
+			if (stop  > p->maxx) p->maxx = stop;
+			return p;
+		}
+	}
 
 	++check;		/* Automatically skip to the next plane */
 	if (check<lastvisplane) {
 		do {
 			if (height == check->height &&		/* Same plane as before? */
 				PicHandle == check->PicHandle &&
-				Light == check->PlaneLight && 
-				color == check->color && 
-				special == check->special && 
+				Light == check->PlaneLight &&
+				color == check->color &&
+				special == check->special &&
 				check->open[start] == OPENMARK) {	/* Not defined yet? */
 				if (start < check->minx) {	/* In range of the plane? */
 					check->minx = start;	/* Mark the new edge */
@@ -87,6 +123,8 @@ static visplane_t *FindPlane(visplane_t *check, viswall_t *segl, int start, Word
 				if (stop > check->maxx) {
 					check->maxx = stop;		/* Mark the new edge */
 				}
+				plane_cache[plane_cache_pos] = check;
+				plane_cache_pos = (plane_cache_pos + 1) & (PLANE_CACHE_SIZE - 1);
 				return check;			/* Use the same one as before */
 			}
 		} while (++check<lastvisplane);
@@ -105,6 +143,11 @@ static visplane_t *FindPlane(visplane_t *check, viswall_t *segl, int start, Word
 	check->minx = start;
 	check->maxx = stop;
 	check->PlaneLight = Light;		/* Set the light level */
+
+	/* Stash the new plane in the MRU cache so subsequent column-ends
+	 * that want the same content can pick it up without scanning. */
+	plane_cache[plane_cache_pos] = check;
+	plane_cache_pos = (plane_cache_pos + 1) & (PLANE_CACHE_SIZE - 1);
 
 	if (visplanesCount > visplanesCountMax) visplanesCountMax = visplanesCount;
 

@@ -591,6 +591,13 @@ typedef struct {		/* Describe a wall segment to be drawn */
 	Word seglightlevelContrast;	// Added for fake contrast, previously I did it early and affected the visplanes
 	Word seglightlevel;
 	seg_t *SegPtr;			/* Pointer to line segment for clipping */
+	/* Per-wall pointer into phase6.c's columnStoreArray pool. Replaces
+	 * the columnStoreArrayPtr[]/columnStoreArrayIndex indirection. Set
+	 * in StartSegLoop before SegLoop() advances the pool pointer; the
+	 * wall-draw passes pick it back up directly off the wall. Typed as
+	 * void* because ColumnStore is declared in doomx.h which is
+	 * included at the bottom of this header. */
+	void *columnStoreData;
 } viswall_t;
 
 typedef struct {		/* Describe data on the status bar */

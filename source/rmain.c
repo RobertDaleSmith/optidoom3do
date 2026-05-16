@@ -142,12 +142,16 @@ void R_Setup(void)
 
 	extralight = player->extralight << 6;	/* Init the extra lighting value */
 
-	lastvisplane = visplanes+1;		/* visplanes[0] is left empty */
-	lastwallcmd = viswalls;			/* No walls added yet */
-	vissprite_p = vissprites;		/* No sprites added yet */
-	lastopening = openings;			/* No openings found */
+	{
+		extern void resetPlaneCache(void);
+		lastvisplane = visplanes+1;		/* visplanes[0] is left empty */
+		lastwallcmd = viswalls;			/* No walls added yet */
+		vissprite_p = vissprites;		/* No sprites added yet */
+		lastopening = openings;			/* No openings found */
 
-	visplanesCount = 1;
+		visplanesCount = 1;
+		resetPlaneCache();		/* Drop the MRU cache; planes are about to be repopulated */
+	}
 }
 
 /**********************************

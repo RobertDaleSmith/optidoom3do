@@ -18,6 +18,14 @@ static Word TimeMark4;	/* Timer for ticks */
 static thinker_t thinkercap;	/* Both the head and tail of the thinker list */
 static Boolean refreshdrawn;		/* Used to refresh "Paused" */
 
+/* DOS-Doom-style top-of-screen message. Game code (pickups, cheats)
+ * writes a string into player->message; this driver displays it for
+ * a short window then fades. The 3DO port originally never rendered
+ * the message field at all. */
+static char  *g_msg_text       = 0;
+static Word   g_msg_ticks_left = 0;
+#define MSG_HOLD_TICKS 120	/* ~4 seconds at 30Hz tick */
+
 /**********************************
 
 	Remove a thinker structure from the linked list and from
@@ -253,6 +261,26 @@ Word P_Ticker(void)
 
 **********************************/
 
+static void drawHudMessage(void)
+{
+	/* Picks up a freshly-set player->message and shows it at the top
+	 * for MSG_HOLD_TICKS, then decays. Also re-arms when the same
+	 * pointer is overwritten with a different string. */
+	if (players.message && players.message != g_msg_text) {
+		g_msg_text       = players.message;
+		g_msg_ticks_left = MSG_HOLD_TICKS;
+	}
+	if (g_msg_ticks_left > 0 && g_msg_text) {
+		PrintBigFont(8, 4, (Byte *)g_msg_text);
+		if (g_msg_ticks_left >= ElapsedTime) g_msg_ticks_left -= ElapsedTime;
+		else g_msg_ticks_left = 0;
+		if (g_msg_ticks_left == 0) {
+			players.message = 0;
+			g_msg_text = 0;
+		}
+	}
+}
+
 void P_Drawer(void)
 {
 	if (gamepaused && refreshdrawn) {
@@ -265,11 +293,13 @@ void P_Drawer(void)
 	} else if (players.AutomapFlags & AF_ACTIVE) {
 		AM_Drawer();		/* Draw the automap */
 		ST_Drawer();		/* Draw the status bar */
+		drawHudMessage();
 		UpdateAndPageFlip();	/* Update and page flip */
 		refreshdrawn = TRUE;
 	} else {
 		R_RenderPlayerView();	/* Render the 3D view */
 		ST_Drawer();			/* Draw the status bar */
+		drawHudMessage();
 		UpdateAndPageFlip();
 		refreshdrawn = TRUE;
 	}
