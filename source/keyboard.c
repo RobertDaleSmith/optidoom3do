@@ -212,19 +212,20 @@ static const KbMap KB_MAP[] = {
   { 0x12, PadC          },            /* L-Shift -> run         */
   { 0x59, PadC          },            /* R-Shift -> run         */
 
-  /* Menu / map / confirm. ESC = PadX (OptiDoom's options-menu toggle,
-   * mirroring PC Doom's ESC = menu). Tab = PadXLeft (an otherwise-
-   * unused pad bit we wired into AM_Control as a single-button
-   * automap toggle, so PC Doom's Tab = automap works without
+  /* Menu / map / confirm / pause. ESC = PadX (OptiDoom's options-menu
+   * toggle, mirroring PC Doom's ESC = menu). Tab = PadXLeft (an
+   * otherwise-unused pad bit we wired into AM_Control as a single-
+   * button automap toggle, so PC Doom's Tab = automap works without
    * forcing the player to chord Use+Start). Enter = PadA (fire in
-   * game, confirm in menus). P key = PadStart (pause) -- DOS Doom
-   * pause was the Pause/Break key but its PS/2 scancode is the
-   * weird E1-prefix sequence, so we use P instead which is also
-   * the convention in many Doom ports. */
-  { 0x76, PadX          },            /* Esc   -> options menu  */
-  { 0x0D, PadXLeft      },            /* Tab   -> automap       */
-  { 0x5A, PadA          },            /* Enter -> confirm       */
-  { 0x4D, PadStart      },            /* P     -> pause         */
+   * game, confirm in menus). The Pause/Break key drives PadStart --
+   * its PS/2 scancode is the multi-byte E1 sequence, which the
+   * driverlet collapses into synthetic scancode 0x84 with a clean
+   * press-then-release pulse. P is intentionally NOT bound here so
+   * it stays available for the IDCLIP cheat. */
+  { 0x76, PadX          },            /* Esc        -> options menu */
+  { 0x0D, PadXLeft      },            /* Tab        -> automap      */
+  { 0x5A, PadA          },            /* Enter      -> confirm      */
+  { 0x84, PadStart      },            /* Pause/Brk  -> pause        */
 };
 
 #define KB_MAP_LEN (sizeof KB_MAP / sizeof KB_MAP[0])

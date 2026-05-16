@@ -562,6 +562,7 @@ static Boolean WeaponAllowed(player_t *player)
 extern void toggleIDDQD(player_t *player);
 extern void applyIDKFA(player_t *player);
 extern void toggleNoclip(player_t *player);
+extern void initScreenChangeVariables(bool shouldInitMathTables);
 extern Boolean ShowAllLines;
 extern Boolean ShowAllThings;
 extern Word    gamemap;
@@ -605,13 +606,20 @@ static void processKeyboardCheats(player_t *player)
 		player->message = isAutoRunEnabled() ? "Always Run ON" : "Always Run OFF";
 	}
 
-	/* +/- screen size adjust (one-shot). */
+	/* +/- screen size adjust (one-shot). Same path as the options
+	 * menu's mi_screenSize handler -- initScreenChangeVariables re-
+	 * runs the math tables, viewport math, gamma and sky setup so
+	 * the new size actually renders this frame. Changing the index
+	 * alone updates the option but not the live viewport. */
 	sd = readRequestedScreenSize();
 	if (sd != 0) {
 		int idx = (int)optGraphics->screenSizeIndex + sd;
 		if (idx < 0) idx = 0;
 		if (idx >= SCREENSIZE_OPTIONS_NUM) idx = SCREENSIZE_OPTIONS_NUM - 1;
-		optGraphics->screenSizeIndex = idx;
+		if ((int)optGraphics->screenSizeIndex != idx) {
+			optGraphics->screenSizeIndex = idx;
+			initScreenChangeVariables(true);
+		}
 	}
 
 	/* IDCLEV xx warp. Bounds checked against current MaxLevel. */

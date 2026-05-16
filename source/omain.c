@@ -367,7 +367,7 @@ static void copyAllOptions(AllOptions *optDst, AllOptions *optSrc)
 	copyOtherOptions(&optDst->other, &optSrc->other);
 }
 
-static void initScreenChangeVariables(bool shouldInitMathTables)
+void initScreenChangeVariables(bool shouldInitMathTables)
 {
 	setScreenSizeOptionFromSlider();
 	setScreenScaleValuesFromOption();
