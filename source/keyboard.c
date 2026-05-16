@@ -24,7 +24,8 @@
 static Item    kb_port_item   = -1;
 static Item    kb_msg_item    = -1;
 static Item    kb_broker_port = -1;
-static int32   kb_enabled     = 0;
+int32   kb_enabled     = 0;  /* exposed for debug instrumentation */
+int32   kb_event_count = 0;  /* incremented each time we drain an event */
 
 /* Live 256-bit key matrix from the broker. Bit N set = scancode N
  * held. The upper 128 bits hold E0-extended keys (matrix bit =
@@ -96,10 +97,16 @@ static const KbMap KB_MAP[] = {
   { 0x12, PadC          },            /* L-Shift -> run         */
   { 0x59, PadC          },            /* R-Shift -> run         */
 
-  /* Menu / map / confirm */
-  { 0x76, PadStart      },            /* Esc   -> menu          */
-  { 0x0D, PadX          },            /* Tab   -> automap       */
+  /* Menu / map / confirm. ESC = PadX (OptiDoom's options-menu toggle,
+   * mirroring PC Doom's ESC = menu). Tab = PadXLeft (an otherwise-
+   * unused pad bit we wired into AM_Control as a single-button
+   * automap toggle, so PC Doom's Tab = automap works without
+   * forcing the player to chord Use+Start). Enter = PadA (fire in
+   * game, confirm in menus). Backquote = PadStart (pause). */
+  { 0x76, PadX          },            /* Esc   -> options menu  */
+  { 0x0D, PadXLeft      },            /* Tab   -> automap       */
   { 0x5A, PadA          },            /* Enter -> confirm       */
+  { 0x0E, PadStart      },            /* Backquote ` -> pause   */
 };
 
 #define KB_MAP_LEN (sizeof KB_MAP / sizeof KB_MAP[0])
@@ -144,16 +151,23 @@ void initKeyboard(void)
   memset (&config, 0, sizeof config);
   config.cr_Header.ebh_Flavor = EB_Configure;
   config.cr_Category          = LC_Observer;
-  config.cr_TriggerMask[0]    = EVENTBIT0_KeyboardKeyPressed
+  /* JPT-style: subscribe to ALL device-class events so the modern
+   * broker actually polls every driverlet (including pad). */
+  config.cr_TriggerMask[0]    = EVENTBIT0_ControlButtonUpdate
+                              | EVENTBIT0_ControlButtonPressed
+                              | EVENTBIT0_ControlButtonReleased
+                              | EVENTBIT0_ControlButtonArrived
+                              | EVENTBIT0_MouseUpdate
+                              | EVENTBIT0_MouseMoved
+                              | EVENTBIT0_MouseButtonPressed
+                              | EVENTBIT0_MouseButtonReleased
+                              | EVENTBIT0_MouseDataArrived
+                              | EVENTBIT0_KeyboardKeyPressed
                               | EVENTBIT0_KeyboardKeyReleased
                               | EVENTBIT0_KeyboardUpdate
                               | EVENTBIT0_KeyboardDataArrived;
   config.cr_QueueMax          = 10;
 
-  /* Send Configure; broker replies on kb_msg_item when it has
-   * accepted the subscription. We don't wait synchronously --
-   * the reply gets drained by readKeyboardBits's GetMsg loop
-   * alongside event messages. */
   cfgptr = &config;
   err = SendMsg (kb_broker_port, kb_msg_item,
                  cfgptr, sizeof config);
@@ -187,15 +201,11 @@ Word readKeyboardBits(void)
       Message *m = (Message *)LookupItem (msg);
       EventBrokerHeader *hdr;
 
+      kb_event_count++;
       if (m == NULL) continue;
       hdr = (EventBrokerHeader *)m->msg_DataPtr;
-      if (hdr == NULL)
-        {
-          ReplyMsg (msg, 0, NULL, 0);
-          continue;
-        }
 
-      if (hdr->ebh_Flavor == EB_EventRecord)
+      if (hdr != NULL && hdr->ebh_Flavor == EB_EventRecord)
         {
           EventFrame *frame = (EventFrame *)(hdr + 1);
           while (frame->ef_ByteCount != 0)
@@ -216,9 +226,9 @@ Word readKeyboardBits(void)
             }
         }
 
-      /* EB_EventRecord messages get ReplyMsg'd back to the
-       * broker so it can recycle them. The Configure ack is also
-       * just acknowledged. */
+      /* Reply ONLY to broker-originated messages. The EB_Configure
+       * ACK arrives on kb_msg_item itself -- replying to our own
+       * SendMsg ACK is illegal and corrupts kernel state. */
       if (msg != kb_msg_item) ReplyMsg (msg, 0, NULL, 0);
     }
 

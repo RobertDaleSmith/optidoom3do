@@ -423,6 +423,10 @@ static void initSystem()
 		exit(10);
 	}
 
+	/* InitEventUtility BEFORE CreateScreenGroup so the modern broker
+	 * sees our subscription early. JPT pattern. */
+	InitEventUtility(1,1,FALSE);
+
     #if 0	/* Set to 1 for the PAL version, 0 for the NTSC version */
 	{
 		int width;
@@ -447,7 +451,7 @@ static void initSystem()
 
 	initScreenVDL();
 
-	InitEventUtility(1,1,FALSE);	/* I want 1 joypad, 1 mouse, and passive listening */
+	/* InitEventUtility already called above (moved earlier). */
 	initKeyboard();					/* PBUS keyboard subscription (parallel to InitEventUtility) */
 
 	InitSoundPlayer("system/audio/dsp/varmono8.dsp",0); /* Init memory for the sound player */
@@ -466,30 +470,21 @@ static void initSystem()
 void Init()
 {
     initSystem();
-
     startModMenu();
+    loadSoundFx();
 
-	// Have removed the logos at all since the version 0.3
-	//if (!skipLogos) showLogos();
+	MinHandles = 1200;
+	InitMemory();
+	InitResource();
 
-
-    loadSoundFx();  // For some reason, this cannot be loaded later or sound effects will be missing (issues with memory allocation?)
-
-
-	MinHandles = 1200;		/* I will need lot's of memory handles */
-
-	InitMemory();			/* Init the memory manager */
-	InitResource();			/* Init the resource manager */
-
-	InterceptKey();			/* Init events */
-	SetErrBombFlag(TRUE);	/* Any OS errors will kill me */
+	InterceptKey();
+	SetErrBombFlag(TRUE);
 	MemPurgeCallBack = LowMemCode;
-
 
 	initTimer();
 
-	setPrimaryMenuOptions();    // We had to do this here, because some of the initial option menus (floor quality) are needed for early rendering inits
-	optHack();                  // These too, just for repeatitive debugging tests
+	setPrimaryMenuOptions();
+	optHack();
 	initAllCCBelements();
 	initEngine();
 }

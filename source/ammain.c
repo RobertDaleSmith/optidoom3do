@@ -326,6 +326,13 @@ void AM_Control(player_t *player)
 			}
 		}
 	}
+	/* Single-button automap toggle for keyboard Tab. PadXLeft is
+	 * otherwise unused in OptiDoom; the keyboard driverlet maps
+	 * Tab onto this bit so PC Doom's Tab=automap behaviour just
+	 * works without disturbing Use+Start chord on the pad. */
+	if ((NewButtons & PadXLeft) && !(player->AutomapFlags & AF_OPTIONSACTIVE)) {
+		player->AutomapFlags ^= AF_ACTIVE;
+	}
 
 	if ( !(player->AutomapFlags & AF_ACTIVE) )  {	/* Is the automap is off? */
 		return;		/* Exit now! */

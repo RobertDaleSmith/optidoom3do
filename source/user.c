@@ -216,28 +216,46 @@ static void P_BuildMove(player_t *player)
 
 	buttons = JoyPadButtons;
 	oldbuttons = PrevJoyPadButtons;
-	SpeedIndex = ((buttons&PadSpeed) && optOther->input == INPUT_DPAD_ONLY)  ? 1 : 0;
+	SpeedIndex = ((buttons&PadSpeed)
+	              && (optOther->input == INPUT_DPAD_ONLY
+	                  || optOther->input == INPUT_KEYBOARD_ONLY
+	                  || optOther->input == INPUT_KEYBOARD_AND_MOUSE)) ? 1 : 0;
 	SpeedIndex ^= optOther->alwaysRun;
 
 	// Player DPAD Strafe
 	Motion = 0;				/* Assume no side motion */
-	if ((!(buttons & PadUse) || optOther->input != INPUT_DPAD_ONLY)) {		/* Use allows weapon change */
+	/* In DPAD / KEYBOARD modes, PadUse is the weapon-cycle modifier
+	 * (PadLeftShift / PadRightShift cycle weapons while PadUse is
+	 * held instead of strafing). Suppress strafe input while PadUse
+	 * is held so the same shifts don't double-act. */
+	if (!(buttons & PadUse)
+	    || (optOther->input != INPUT_DPAD_ONLY
+	        && optOther->input != INPUT_KEYBOARD_ONLY
+	        && optOther->input != INPUT_KEYBOARD_AND_MOUSE)) {
 
 		switch(optOther->input) {
 			case INPUT_DPAD_ONLY:
 				Motion = tryMoveBasedOnOppositeButtons(PadRightShift, PadLeftShift, true, buttons, SpeedIndex);
 			break;
-			
+
 			case INPUT_MOUSE_AND_DPAD:
 				Motion = tryMoveBasedOnOppositeButtons(PadRight, PadLeft, true, buttons, SpeedIndex);
 			break;
-			
+
 			case INPUT_MOUSE_AND_DPAD_TILT:
 				Motion = tryMoveBasedOnOppositeButtons(PadUp, PadDown, true, buttons, SpeedIndex);
 			break;
 
 			case INPUT_MOUSE_AND_ABC:
 				Motion = tryMoveBasedOnOppositeButtons(PadC, PadA, true, buttons, SpeedIndex);
+			break;
+
+			case INPUT_KEYBOARD_ONLY:
+			case INPUT_KEYBOARD_AND_MOUSE:
+				/* Keyboard puts the strafe keys (comma / period, or
+				 * Alt+Left / Alt+Right) on PadLeftShift / PadRightShift
+				 * via the CPORT4B.ROM driverlet, just like DPAD mode. */
+				Motion = tryMoveBasedOnOppositeButtons(PadRightShift, PadLeftShift, true, buttons, SpeedIndex);
 			break;
 		}
 	}
@@ -250,8 +268,13 @@ static void P_BuildMove(player_t *player)
 
 
 	// Player DPAD rotation
-	/* Use two stage accelerative turning on the joypad */
-	if (optOther->input == INPUT_DPAD_ONLY) {
+	/* Use two stage accelerative turning on the joypad. Keyboard-only
+	 * mode shares this path -- the arrow keys map onto PadLeft/Right
+	 * via the keyboard driverlet so the same accelerative-turn code
+	 * handles "hold arrow to turn smoothly". Keyboard+mouse skips
+	 * this block because the mouse drives turning instead. */
+	if (optOther->input == INPUT_DPAD_ONLY
+	    || optOther->input == INPUT_KEYBOARD_ONLY) {
 		TurnIndex = player->turnheld + ElapsedTime;
 
 		if ( !(buttons & PadLeft) || !(oldbuttons & PadLeft) ) {		/* Not held? */
@@ -417,7 +440,8 @@ static void MoveThePlayer(player_t *player)
 	MObjPtr = player->mo;		/* Cache the MObj */
 	newangle = MObjPtr->angle;	/* Get the angle */
 
-	if (optOther->input == INPUT_DPAD_ONLY) {
+	if (optOther->input == INPUT_DPAD_ONLY
+	    || optOther->input == INPUT_KEYBOARD_ONLY) {
 		newangle += player->angleturn;	/* Adjust turning angle always */
 	} else {
 		const int mouseDiffX = getMousePositionDiff().x;
@@ -581,8 +605,13 @@ void P_PlayerThink(player_t *player)
 
 /* Process use actions */
 
-	if ((optOther->input == INPUT_DPAD_ONLY && (buttons & PadUse)) || 
-		(optOther->input != INPUT_DPAD_ONLY && isMouseButtonPressed(MOUSE_BUTTON_RIGHT)))
+	if (((optOther->input == INPUT_DPAD_ONLY
+	      || optOther->input == INPUT_KEYBOARD_ONLY
+	      || optOther->input == INPUT_KEYBOARD_AND_MOUSE) && (buttons & PadUse))
+	    || (optOther->input != INPUT_DPAD_ONLY
+	        && optOther->input != INPUT_KEYBOARD_ONLY
+	        && optOther->input != INPUT_KEYBOARD_AND_MOUSE
+	        && isMouseButtonPressed(MOUSE_BUTTON_RIGHT)))
 	{
 			if (!player->usedown) {		/* Was use held down? */
 				P_UseLines(player);		/* Nope, process the use button */
@@ -591,7 +620,12 @@ void P_PlayerThink(player_t *player)
 		} else {
 			player->usedown = FALSE;	/* Use is released */
 	}
-	if ((optOther->input == INPUT_DPAD_ONLY && (buttons & PadUse)) || (optOther->input != INPUT_DPAD_ONLY))
+	if (((optOther->input == INPUT_DPAD_ONLY
+	      || optOther->input == INPUT_KEYBOARD_ONLY
+	      || optOther->input == INPUT_KEYBOARD_AND_MOUSE) && (buttons & PadUse))
+	    || (optOther->input != INPUT_DPAD_ONLY
+	        && optOther->input != INPUT_KEYBOARD_ONLY
+	        && optOther->input != INPUT_KEYBOARD_AND_MOUSE))
 	{
 		if (player->pendingweapon == wp_nochange) {
 			i = (buttons^PrevJoyPadButtons)&buttons;	/* Get button downs */

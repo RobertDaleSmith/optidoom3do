@@ -191,7 +191,7 @@ enum {
 static char *frameLimitOptionsStr[FRAME_LIMIT_OPTIONS_NUM] = { "UNLIMITED", "1VBL", "2VBL", "3VBL", "4VBL", "VSYNC" };
 static char *presetOptionsStr[PRESET_OPTIONS_NUM] = { "ATARI", "AMIGA", "SNES", "GBA", "32X", "JAGUAR", "DEFAULT", "FASTER", "CUSTOM", "MAX" };
 static char *offOnOptionsStr[OFFON_OPTIONS_NUM] = { "OFF", "ON" };
-static char *inputOptionsStr[INPUT_OPTIONS_NUM] = { "DPAD ONLY", "MOUSE ONLY", "MOUSE DPAD", "MOUSE DPAD Y", "MOUSE ABC" };
+static char *inputOptionsStr[INPUT_OPTIONS_NUM] = { "DPAD ONLY", "MOUSE ONLY", "MOUSE DPAD", "MOUSE DPAD Y", "MOUSE ABC", "KEYBOARD", "KEY+MOUSE" };
 static char *statsOptionsStr[STATS_OPTIONS_NUM] = { "OFF", "FPS", "MEM", "ALL" };
 static char *wallQualityOptionsStr[WALL_QUALITY_OPTIONS_NUM] = { "LO", "HI"};
 static char *planeQualityOptionsStr[PLANE_QUALITY_OPTIONS_NUM] = { "LO", "MED", "HI" };
@@ -623,8 +623,17 @@ static void handleSpecialMenuItemActions(player_t *player, Word menuItemIndex)
         break;
 
 		case mi_input:
-			setMenuItemVisibility(mi_controls, optOther->input==INPUT_DPAD_ONLY);
-			setMenuItemVisibility(mi_sensitivityX, optOther->input > INPUT_DPAD_ONLY);
+			/* Pad-style "Controls" remap submenu is meaningful for pure
+			 * pad / keyboard input (no mouse axis); keyboard-only
+			 * shares this since its keys are mapped onto pad bits. */
+			setMenuItemVisibility(mi_controls,
+			    optOther->input == INPUT_DPAD_ONLY
+			    || optOther->input == INPUT_KEYBOARD_ONLY);
+			/* Mouse sensitivity X applies whenever the mouse is in
+			 * the loop -- mouse-* modes and keyboard+mouse. */
+			setMenuItemVisibility(mi_sensitivityX,
+			    optOther->input != INPUT_DPAD_ONLY
+			    && optOther->input != INPUT_KEYBOARD_ONLY);
 			setMenuItemVisibility(mi_sensitivityY, optOther->input == INPUT_MOUSE_ONLY);
 		break;
 
